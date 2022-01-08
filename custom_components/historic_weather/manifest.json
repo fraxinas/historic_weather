@@ -1,0 +1,11 @@
+{
+  "codeowners": ["@fraxinas"],
+  "config_flow": false,
+  "dependencies": [],
+  "documentation": "https://github.com/fraxinas/historic_weather_getter",
+  "domain": "historic_weather",
+  "iot_class": "cloud_polling",
+  "name": "Historic Weather",
+  "requirements": [],
+  "version": "0.0.1"
+}
