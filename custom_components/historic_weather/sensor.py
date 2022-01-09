@@ -132,6 +132,7 @@ class HistoricWeatherParser():
         self._current_timestamp = None
 
     def update_current_value(self):
+        new_values = {}
         now = dt_util.now()
         now = datetime.datetime.replace(now, second=0, microsecond=0)
         if self._current_timestamp == now:
@@ -142,7 +143,7 @@ class HistoricWeatherParser():
         for timestamp, values in self._structured_data.items():
             date_time_obj = datetime.datetime.replace((datetime.datetime.strptime(timestamp, "%Y-%m-%d %H:%M")),tzinfo=self._timezone)
             if date_time_obj > start_datetime:
-                self._current_values = {
+                new_values = {
                     ATTR_TEMPERATURE: values[0],
                     ATTR_HUMIDITY: values[1],
                     ATTR_WINDSPEED: values[2],
@@ -152,7 +153,9 @@ class HistoricWeatherParser():
                 break
 
         self._current_timestamp = now
-        _LOGGER.warning(f'historic weather on {start_datetime.strftime("%Y-%m-%d %H:%M")} {self._current_values}')
+        if new_values != self._current_values:
+            self._current_values = new_values
+            _LOGGER.warning(f'on {start_datetime.strftime("%Y-%m-%d %H:%M")} {self._current_values}')
 
     @property
     def temperature(self) -> int:
