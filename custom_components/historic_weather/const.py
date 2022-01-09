@@ -8,6 +8,7 @@ ATTR_PRESSURE = "pressure"
 ATTR_CONDITION = "condition"
 ATTR_RAIN = "rain"
 ATTR_SKY = "sky"
+ATTR_MOON = "moon"
 
 CONF_LOCATION = "location"
 CONF_OFFSET_DAYS = "offset_days"

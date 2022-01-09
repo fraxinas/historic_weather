@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import datetime
 
+import ephem
 
 import json
 import voluptuous as vol
@@ -40,6 +41,7 @@ from .const import (
     ATTR_CONDITION,
     ATTR_RAIN,
     ATTR_SKY,
+    ATTR_MOON,
     CONF_LOCATION,
     CONF_OFFSET_DAYS,
     CONF_OFFSET_HOURS,
@@ -50,43 +52,48 @@ _LOGGER = logging.getLogger(__name__)
 
 SCAN_INTERVAL = datetime.timedelta(minutes=2)
 
-SENSORS = [
-    (SensorEntityDescription(
+SENSORS = {
+    ATTR_TEMPERATURE:[SensorEntityDescription(
         key=ATTR_TEMPERATURE,
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit_of_measurement=TEMP_CELSIUS,
         name="Temperature"
-    ),"mdi:thermometer"),
-    (SensorEntityDescription(
+    ),"mdi:thermometer"],
+    ATTR_HUMIDITY:[SensorEntityDescription(
         key=ATTR_HUMIDITY,
         device_class=SensorDeviceClass.HUMIDITY,
         native_unit_of_measurement=PERCENTAGE,
         name="Humidity",
-    ),"mdi:water-percent"),
-    (SensorEntityDescription(
+    ),"mdi:water-percent"],
+    ATTR_WINDSPEED:[SensorEntityDescription(
         key=ATTR_WINDSPEED,
         native_unit_of_measurement=SPEED_KILOMETERS_PER_HOUR,
         name="Windspeed",
-    ),"mdi:windsock"),
-    (SensorEntityDescription(
+    ),"mdi:windsock"],
+    ATTR_PRESSURE:[SensorEntityDescription(
         key=ATTR_PRESSURE,
         device_class=SensorDeviceClass.PRESSURE,
         native_unit_of_measurement=PRESSURE_MBAR,
         name="Air Pressure",
-    ),"mdi:weather-cloudy"),
-    (SensorEntityDescription(
+    ),"mdi:weather-cloudy"],
+    ATTR_CONDITION:[SensorEntityDescription(
         key=ATTR_CONDITION,
         name="Condition",
-    ),"mdi:weather-cloudy"),
-    (SensorEntityDescription(
+    ),"mdi:weather-cloudy"],
+    ATTR_RAIN:[SensorEntityDescription(
         key=ATTR_RAIN,
         name="Rain",
-    ),"mdi:weather-pouring"),
-    (SensorEntityDescription(
+    ),"mdi:weather-pouring"],
+    ATTR_SKY:[SensorEntityDescription(
         key=ATTR_SKY,
         name="Sky (cloudiness)",
-    ),"mdi:weather-partly-cloudy"),
-]
+    ),"mdi:weather-partly-cloudy"],
+    ATTR_MOON:[SensorEntityDescription(
+        key=ATTR_MOON,
+        native_unit_of_measurement=PERCENTAGE,
+        name="Moon illumination",
+    ),"mdi:weather-night"],
+}
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -109,19 +116,20 @@ async def async_setup_platform(
     location = config[CONF_LOCATION]
     offset_days = config[CONF_OFFSET_DAYS]
     timezone = hass.config.time_zone
+    observer = ephem.Observer()
+    observer.lat, observer.lon, observer.elevation = hass.config.latitude, hass.config.longitude, hass.config.elevation
 
-
-    weather = HistoricWeatherParser(config[CONF_FILENAME], timezone, offset_days, config[CONF_OFFSET_HOURS])
-
-    entities = [HistoricWeatherSensor(weather, location, offset_days, sensor, icon) for (sensor, icon) in SENSORS]
+    weather = HistoricWeatherParser(config[CONF_FILENAME], timezone, offset_days, config[CONF_OFFSET_HOURS], observer)
+    entities = [HistoricWeatherSensor(weather, location, offset_days, sensor) for (sensor, _) in SENSORS.values()]
     async_add_entities(entities, update_before_add=True)
 
 class HistoricWeatherParser():
-    def __init__(self, filename, timezone, offset_days, offset_hours):
+    def __init__(self, filename, timezone, offset_days, offset_hours, observer):
         rawdata = open(filename, 'r').read()
         self._timezone = dt_util.get_time_zone(timezone)
         self._offset_days = offset_days
         self._offset_hours = offset_hours
+        self._observer = observer
 
         now = dt_util.now()
         start_datetime = now - datetime.timedelta(days=offset_days)
@@ -133,7 +141,7 @@ class HistoricWeatherParser():
         self._current_values = {}
         self._current_timestamp = None
 
-    def parseCondition(self, values):
+    def parse_condition(self, values):
         condition = values.get(ATTR_CONDITION,"").lower()
         res = {}
 
@@ -189,6 +197,37 @@ class HistoricWeatherParser():
 
         return res
 
+    def calc_moon(self, time):
+        self._observer.date = time
+        moon = ephem.Moon()
+        moon.compute(self._observer)
+        next_full = ephem.localtime(ephem.next_full_moon(time)).date()
+        next_new = ephem.localtime(ephem.next_new_moon(time)).date()
+        next_last_quarter = ephem.localtime(ephem.next_last_quarter_moon(time)).date()
+        next_first_quarter = ephem.localtime(ephem.next_first_quarter_moon(time)).date()
+        previous_full = ephem.localtime(ephem.previous_full_moon(time)).date()
+        previous_new = ephem.localtime(ephem.previous_new_moon(time)).date()
+        previous_last_quarter = ephem.localtime(ephem.previous_last_quarter_moon(time)).date()
+        previous_first_quarter = ephem.localtime(ephem.previous_first_quarter_moon(time)).date()
+        if time in (next_full, previous_full):
+            icon = "mdi:moon-full"
+        elif time in (next_new, previous_new):
+            icon = "mdi:moon-new"
+        elif time in (next_first_quarter, previous_first_quarter):
+            icon = "mdi:moon-first-quarter"
+        elif time in (next_last_quarter, previous_last_quarter):
+            icon = "mdi:moon-last-quarter"
+        elif previous_new < next_first_quarter < next_full < next_last_quarter < next_new:
+            icon = "mdi:moon-waxing-crescent"
+        elif previous_first_quarter < next_full < next_last_quarter < next_new < next_first_quarter:
+            icon = "mdi:moon-waxing-gibbous"
+        elif previous_full < next_last_quarter < next_new < next_first_quarter < next_full:
+            icon = "mdi:moon-waning-gibbous"
+        elif previous_last_quarter < next_new < next_first_quarter < next_full < next_last_quarter:
+            icon = "mdi:moon-waning-crescent"
+        SENSORS[ATTR_MOON][1] = icon
+        return {ATTR_MOON: round(moon.phase) if moon.alt > 0 else 0}
+
     def update_current_value(self):
         new_values = {}
         now = dt_util.now()
@@ -203,11 +242,12 @@ class HistoricWeatherParser():
             if date_time_obj > start_datetime:
                 for idx, key in enumerate([ATTR_TEMPERATURE, ATTR_HUMIDITY, ATTR_WINDSPEED, ATTR_PRESSURE, ATTR_CONDITION]):
                     new_values[key] = values[idx]
-                new_values |= self.parseCondition(new_values)
+                new_values |= self.parse_condition(new_values)
                 break
 
         self._current_timestamp = now
         if new_values != self._current_values:
+            new_values |= self.calc_moon(start_datetime)
             self._current_values = new_values
             _LOGGER.warning(f'on {start_datetime.strftime("%Y-%m-%d %H:%M")} {self._current_values}')
 
@@ -239,12 +279,17 @@ class HistoricWeatherParser():
     def sky(self) -> int:
         return self._current_values[ATTR_SKY]
 
+    @property
+    def moon(self) -> int:
+        return self._current_values[ATTR_MOON]
+
+
 class HistoricWeatherSensor(SensorEntity):
     """Representation of a historic weather data sensor."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, weather, location, offset_days, entity_description, icon):
+    def __init__(self, weather, location, offset_days, entity_description):
         super().__init__()
         self._entity_description = entity_description
         self._weather = weather
@@ -252,7 +297,6 @@ class HistoricWeatherSensor(SensorEntity):
         self._offset_days = offset_days
         self._name = f"{entity_description.key} in {location}, {offset_days} days ago"
         self._available = True
-        self._icon = icon
 
     @property
     def name(self) -> str:
@@ -280,7 +324,7 @@ class HistoricWeatherSensor(SensorEntity):
 
     @property
     def icon(self):
-        return self._icon
+        return SENSORS[self._entity_description.key][1]
 
     async def async_update(self):
         self._weather.update_current_value()
