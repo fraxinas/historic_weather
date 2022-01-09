@@ -43,6 +43,8 @@ from .const import (
     ATTR_WINDSPEED,
     ATTR_PRESSURE,
     ATTR_CONDITION,
+    ATTR_RAIN,
+    ATTR_SKY,
     BASE_URL,
     DOMAIN,
     CONF_LOCATION,
@@ -83,6 +85,14 @@ SENSORS = [
         key=ATTR_CONDITION,
         name="Condition",
     ),"mdi:weather-cloudy"),
+    (SensorEntityDescription(
+        key=ATTR_RAIN,
+        name="Rain",
+    ),"mdi:weather-pouring"),
+    (SensorEntityDescription(
+        key=ATTR_SKY,
+        name="Sky (cloudiness)",
+    ),"mdi:weather-partly-cloudy"),
 ]
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
@@ -117,7 +127,6 @@ class HistoricWeatherParser():
     def __init__(self, filename, timezone, offset_days, offset_hours):
         rawdata = open(filename, 'r').read()
         self._timezone = dt_util.get_time_zone(timezone)
-        _LOGGER.warning(f'timezone {self._timezone}')
         self._offset_days = offset_days
         self._offset_hours = offset_hours
 
@@ -131,6 +140,62 @@ class HistoricWeatherParser():
         self._current_values = {}
         self._current_timestamp = None
 
+    def parseCondition(self, values):
+        condition = values.get(ATTR_CONDITION,"").lower()
+        res = {}
+
+        # from https://www.ecobee.com/home/developer/api/documentation/v1/objects/WeatherForecast.shtml
+        # we're gonna interpret the numeric value as a correction factor for the daylight intensitiy,
+        # the higher the value, the more it will be dimmed down
+
+        # The order on the 2 DICTS is crucial - short substrings must matched last!
+        SKY_DICT = {
+            "mostly sunny": 3,
+            "mostly clear": 4,
+            "hazy sunshine": 5,
+            "haze": 6,
+            "passing clouds": 7,
+            "more sun than clouds": 8,
+            "scattered clouds": 9,
+            "partly cloudy": 10,
+            "a mixture of sun and clouds": 11,
+            "high level clouds": 12,
+            "more clouds than sun": 13,
+            "partly sunny": 14,
+            "broken clouds": 15,
+            "mostly cloudy": 16,
+            "cloudy": 17,
+            "overcast": 18,
+            "low clouds": 19,
+            "light fog": 20,
+            "dense fog": 22,
+            "clear": 2,
+            "sunny": 1,
+            "fog": 21,
+            "": 0
+        }
+
+        RAIN_DICT = {
+            "drizzle": 1,
+            "light rain": 2,
+            "showers": 3,
+            "heavy rain": 5,
+            "rain.": 4,
+            "": 0
+        }
+
+        for keyword, value in RAIN_DICT.items():
+            if keyword in condition:
+                res[ATTR_RAIN] = value
+                break
+
+        for keyword, value in SKY_DICT.items():
+            if keyword in condition:
+                res[ATTR_SKY] = value
+                break
+
+        return res
+
     def update_current_value(self):
         new_values = {}
         now = dt_util.now()
@@ -143,13 +208,9 @@ class HistoricWeatherParser():
         for timestamp, values in self._structured_data.items():
             date_time_obj = datetime.datetime.replace((datetime.datetime.strptime(timestamp, "%Y-%m-%d %H:%M")),tzinfo=self._timezone)
             if date_time_obj > start_datetime:
-                new_values = {
-                    ATTR_TEMPERATURE: values[0],
-                    ATTR_HUMIDITY: values[1],
-                    ATTR_WINDSPEED: values[2],
-                    ATTR_PRESSURE: values[3],
-                    ATTR_CONDITION: values[4],
-                }
+                for idx, key in enumerate([ATTR_TEMPERATURE, ATTR_HUMIDITY, ATTR_WINDSPEED, ATTR_PRESSURE, ATTR_CONDITION]):
+                    new_values[key] = values[idx]
+                new_values |= self.parseCondition(new_values)
                 break
 
         self._current_timestamp = now
@@ -176,6 +237,14 @@ class HistoricWeatherParser():
     @property
     def condition(self) -> int:
         return self._current_values[ATTR_CONDITION]
+
+    @property
+    def rain(self) -> int:
+        return self._current_values[ATTR_RAIN]
+
+    @property
+    def sky(self) -> int:
+        return self._current_values[ATTR_SKY]
 
 class HistoricWeatherSensor(SensorEntity):
     """Representation of a historic weather data sensor."""

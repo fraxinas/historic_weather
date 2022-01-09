@@ -17,4 +17,5 @@
     offset_hours: 0
 ```
 * the historic weather data is assumed to have local timezone timestamps of the remote location
-* the values `temperature`, `humidity`, `pressure`, `windspeed` and `condition` are then provided as sensors with the IDs in the form of `sensor.value_in_country_city_182_days_ago`
+* the values `temperature`, `humidity`, `pressure`, `windspeed`, `condition`, `rain` and `sky` are then provided as sensors with the IDs in the form of `sensor.value_in_country_city_182_days_ago`
+
