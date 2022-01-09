@@ -2,15 +2,10 @@
 from __future__ import annotations
 
 import logging
-import re
 import datetime
-import pytz
 
-from typing import Any, Callable, Dict, Optional
-from urllib import parse
 
 import json
-# import re
 import voluptuous as vol
 
 from homeassistant.components.sensor import (
@@ -45,8 +40,6 @@ from .const import (
     ATTR_CONDITION,
     ATTR_RAIN,
     ATTR_SKY,
-    BASE_URL,
-    DOMAIN,
     CONF_LOCATION,
     CONF_OFFSET_DAYS,
     CONF_OFFSET_HOURS,
