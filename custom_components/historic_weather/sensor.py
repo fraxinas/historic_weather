@@ -5,6 +5,7 @@ import logging
 import datetime
 
 import ephem
+from math import degrees
 
 import json
 import voluptuous as vol
@@ -173,6 +174,7 @@ class HistoricWeatherParser():
             "clear": 2,
             "sunny": 1,
             "fog": 21,
+            "thunder": 30,
             "": 0
         }
 
@@ -226,7 +228,8 @@ class HistoricWeatherParser():
         elif previous_last_quarter < next_new < next_first_quarter < next_full < next_last_quarter:
             icon = "mdi:moon-waning-crescent"
         SENSORS[ATTR_MOON][1] = icon
-        return {ATTR_MOON: round(moon.phase) if moon.alt > 0 else 0}
+        moon_altitude = round(degrees(float(moon.alt)))
+        return {ATTR_MOON: round(moon.phase) if moon_altitude > 0 else 0}
 
     def update_current_value(self):
         new_values = {}
@@ -246,10 +249,11 @@ class HistoricWeatherParser():
                 break
 
         self._current_timestamp = now
+        new_values |= self.calc_moon(start_datetime)
+
         if new_values != self._current_values:
-            new_values |= self.calc_moon(start_datetime)
+            _LOGGER.warning(f'on {start_datetime.strftime("%Y-%m-%d %H:%M")} {new_values}')
             self._current_values = new_values
-            _LOGGER.warning(f'on {start_datetime.strftime("%Y-%m-%d %H:%M")} {self._current_values}')
 
     @property
     def temperature(self) -> int:
