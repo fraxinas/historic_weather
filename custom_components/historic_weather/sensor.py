@@ -49,6 +49,51 @@ from .const import (
     CONF_FILENAME
 )
 
+SKY_DICT = {
+    "mostly sunny": 3,
+    "mostly clear": 4,
+    "hazy sunshine": 5,
+    "haze": 6,
+    "passing clouds": 7,
+    "more sun than clouds": 8,
+    "scattered clouds": 9,
+    "partly cloudy": 10,
+    "a mixture of sun and clouds": 11,
+    "high level clouds": 12,
+    "more clouds than sun": 13,
+    "partly sunny": 14,
+    "broken clouds": 15,
+    "mostly cloudy": 16,
+    "cloudy": 17,
+    "overcast": 18,
+    "low clouds": 19,
+    "light fog": 20,
+    "dense fog": 22,
+    "clear": 2,
+    "sunny": 1,
+    "fog": 21,
+    "thunder": 30,
+    "": 0
+}
+
+RAIN_DICT = {
+    "drizzle": 1,
+    "light rain": 2,
+    "showers": 3,
+    "heavy rain": 5,
+    "rain.": 4,
+    "": 0
+}
+
+def _get_condition_enum_options():
+    ret = []
+    for key in SKY_DICT.keys():
+        ret.append(key)
+    for key in RAIN_DICT.keys():
+        ret.append(key)
+    _LOGGER.warning(f'_get_condition_enum_options: {ret}')
+    return ret
+
 _LOGGER = logging.getLogger(__name__)
 
 SCAN_INTERVAL = datetime.timedelta(minutes=2)
@@ -79,6 +124,10 @@ SENSORS = {
     ),"mdi:weather-cloudy"],
     ATTR_CONDITION:[SensorEntityDescription(
         key=ATTR_CONDITION,
+        device_class=SensorDeviceClass.ENUM,
+        options=_get_condition_enum_options(),
+        state_class=None,
+        native_unit_of_measurement=None,
         name="Condition",
     ),"mdi:weather-cloudy"],
     ATTR_RAIN:[SensorEntityDescription(
@@ -143,7 +192,7 @@ class HistoricWeatherParser():
         self._current_timestamp = None
 
     def parse_condition(self, values):
-        condition = values.get(ATTR_CONDITION,"").lower()
+        condition = values.get(ATTR_CONDITION,"")
         res = {}
 
         # from https://www.ecobee.com/home/developer/api/documentation/v1/objects/WeatherForecast.shtml
@@ -151,41 +200,6 @@ class HistoricWeatherParser():
         # the higher the value, the more it will be dimmed down
 
         # The order on the 2 DICTS is crucial - short substrings must matched last!
-        SKY_DICT = {
-            "mostly sunny": 3,
-            "mostly clear": 4,
-            "hazy sunshine": 5,
-            "haze": 6,
-            "passing clouds": 7,
-            "more sun than clouds": 8,
-            "scattered clouds": 9,
-            "partly cloudy": 10,
-            "a mixture of sun and clouds": 11,
-            "high level clouds": 12,
-            "more clouds than sun": 13,
-            "partly sunny": 14,
-            "broken clouds": 15,
-            "mostly cloudy": 16,
-            "cloudy": 17,
-            "overcast": 18,
-            "low clouds": 19,
-            "light fog": 20,
-            "dense fog": 22,
-            "clear": 2,
-            "sunny": 1,
-            "fog": 21,
-            "thunder": 30,
-            "": 0
-        }
-
-        RAIN_DICT = {
-            "drizzle": 1,
-            "light rain": 2,
-            "showers": 3,
-            "heavy rain": 5,
-            "rain.": 4,
-            "": 0
-        }
 
         for keyword, value in RAIN_DICT.items():
             if keyword in condition:
@@ -245,7 +259,11 @@ class HistoricWeatherParser():
             if date_time_obj > start_datetime:
                 for idx, key in enumerate([ATTR_TEMPERATURE, ATTR_HUMIDITY, ATTR_WINDSPEED, ATTR_PRESSURE, ATTR_CONDITION]):
                     new_values[key] = values[idx]
+                if ATTR_CONDITION in new_values:
+                    new_values[ATTR_CONDITION] = new_values[ATTR_CONDITION].lower().rstrip('.')
                 new_values |= self.parse_condition(new_values)
+                # new_values.pop(ATTR_CONDITION)
+                _LOGGER.warning(f'parsed new_values = {new_values}')
                 break
 
         self._current_timestamp = now
@@ -291,8 +309,6 @@ class HistoricWeatherParser():
 class HistoricWeatherSensor(SensorEntity):
     """Representation of a historic weather data sensor."""
 
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
     def __init__(self, weather, location, offset_days, entity_description):
         super().__init__()
         self._entity_description = entity_description
@@ -301,6 +317,10 @@ class HistoricWeatherSensor(SensorEntity):
         self._offset_days = offset_days
         self._name = f"{entity_description.key} in {location}, {offset_days} days ago"
         self._available = True
+        if self._entity_description.key == ATTR_CONDITION:
+            self._attr_state_class = None  # or an appropriate non-numeric class
+        else:
+            self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def name(self) -> str:
